@@ -1,0 +1,123 @@
+# gz2zip
+
+`gz2zip` converts **GZIP to ZIP/ZIP64 without recompression** by reusing the original Deflate payload.
+
+This is much faster than decompressing and re-zipping, and it supports both:
+1. **seekable file conversion** (`gzip_to_zip`)
+2. **streaming conversion** (`stream_gzip_to_zip`) for pipes and async workloads
+
+## Installation
+
+```bash
+pip install gz2zip
+```
+
+or with `uv`:
+
+```bash
+uv tool install gz2zip
+```
+
+## Supported Python versions
+
+Based on the official Python version support table, this package targets:
+
+- Python 3.10
+- Python 3.11
+- Python 3.12
+- Python 3.13
+- Python 3.14
+
+## CLI Usage
+
+The package installs the `gz2zip` command:
+
+```bash
+gz2zip INPUT_GZ [-o OUTPUT_ZIP] [-n NAME_IN_ZIP] [-s UNCOMPRESSED_SIZE] [-t ISO_TIMESTAMP] [-q]
+```
+
+### Common examples
+
+Convert a file and auto-derive output name (`input.gz` -> `input.zip`):
+
+```bash
+gz2zip input.gz
+```
+
+Set output path and internal filename:
+
+```bash
+gz2zip input.gz -o output.zip -n data.csv
+```
+
+Pipe from stdin to stdout:
+
+```bash
+cat input.gz | gz2zip - -n data.csv > output.zip
+```
+
+Large-file case (>4 GiB original content): provide exact uncompressed size:
+
+```bash
+gz2zip huge.sql.gz -o huge.zip -n huge.sql -s 5368709120
+```
+
+Run as a module:
+
+```bash
+python -m gz2zip input.gz -o output.zip
+```
+
+### CLI options
+
+| Option | Description |
+|---|---|
+| `input` | Input `.gz` file. Use `-` (or omit) to read from stdin. |
+| `-o, --output` | Output ZIP file. Use `-` for stdout. |
+| `-n, --name` | Filename to store inside ZIP. |
+| `-s, --size` | Known uncompressed size (recommended for >4 GiB input). |
+| `-t, --timestamp` | Override timestamp in ISO 8601, e.g. `2025-12-31T23:59:58`. |
+| `-q, --quiet` | Suppress non-error logs. |
+
+## API Usage
+
+### Synchronous (seekable files)
+
+```python
+from gz2zip import gzip_to_zip
+
+with open("input.gz", "rb") as f_in, open("output.zip", "wb") as f_out:
+    gzip_to_zip(f_in, f_out, filename_in_zip="data.csv")
+```
+
+### Asynchronous streaming
+
+```python
+import asyncio
+from gz2zip import stream_gzip_to_zip
+
+async def gzip_chunks():
+    with open("input.gz", "rb") as f:
+        while chunk := f.read(64 * 1024):
+            yield chunk
+
+async def main():
+    with open("output.zip", "wb") as out:
+        async for chunk in stream_gzip_to_zip(gzip_chunks(), "data.csv"):
+            out.write(chunk)
+
+asyncio.run(main())
+```
+
+## ZIP64 note
+
+GZIP stores `ISIZE` modulo `2^32`, so files larger than 4 GiB need an explicit
+`known_uncompressed_size` (`-s` in CLI) if exact size metadata is required.
+
+## Development
+
+Run tests:
+
+```bash
+uv run pytest
+```
