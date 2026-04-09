@@ -12,10 +12,23 @@ This is much faster than decompressing and re-zipping, and it supports both:
 pip install gz2zip
 ```
 
+Install as an isolated CLI tool with `pipx`:
+
+```bash
+pipx install gz2zip
+```
+
 or with `uv`:
 
 ```bash
 uv tool install gz2zip
+```
+
+Run without installing globally:
+
+```bash
+pipx run gz2zip --help
+uvx gz2zip --help
 ```
 
 ## Supported Python versions
@@ -113,6 +126,12 @@ asyncio.run(main())
 
 GZIP stores `ISIZE` modulo `2^32`, so files larger than 4 GiB need an explicit
 `known_uncompressed_size` (`-s` in CLI) if exact size metadata is required.
+
+## Limitation: concatenated GZIP members
+
+Concatenated GZIP streams are valid (for example: `cat a.gz b.gz > joined.gz`),
+but this project currently does **not** support that multi-member format
+correctly. Use single-member `.gz` input files.
 
 ## Development
 
