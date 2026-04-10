@@ -10,6 +10,23 @@ This is much faster than decompressing and re-zipping, and it supports both:
 1. **seekable file conversion** (`gzip_to_zip`)
 2. **streaming conversion** (`stream_gzip_to_zip`) for pipes and async workloads
 
+## Benchmark
+
+```
+Benchmark: 100 MiB text, 5 iterations
+Platform: macOS 26.0.1 (arm64)
+CPU: Apple M1 Pro
+Memory: 32.0 GiB
+Python: 3.12.0
+Input: 100.00 MiB text -> 30.49 MiB gzip
+
+gz2zip.core.gzip_to_zip  mean 9.73 ms  median 9.69 ms  min 9.32 ms  max 10.48 ms
+python gzip + zipfile    mean 3316.88 ms  median 3313.52 ms  min 3299.16 ms  max 3335.05 ms
+shell gzip -dc | zip     mean 3390.16 ms  median 3385.02 ms  min 3361.35 ms  max 3435.71 ms
+```
+
+See `benchmarks/speed_experiment.py` for the benchmark script.
+
 ## Installation
 
 ```bash
