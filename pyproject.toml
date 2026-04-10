@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gz2zip"
-version = "0.1.0"
+version = "0.1.0.post1"
 description = "Fast GZIP-to-ZIP/ZIP64 conversion without recompression"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -28,6 +28,11 @@ classifiers = [
 
 [project.scripts]
 gz2zip = "gz2zip.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/45deg/gz2zip"
+Repository = "https://github.com/45deg/gz2zip"
+Issues = "https://github.com/45deg/gz2zip/issues"
 
 [dependency-groups]
 dev = [
