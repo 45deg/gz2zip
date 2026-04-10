@@ -96,9 +96,30 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _paths_refer_to_same_file(input_path: Path, output_path: Path) -> bool:
+    """Best-effort check to avoid in-place overwrite of the input GZIP."""
+    try:
+        input_resolved = input_path.resolve(strict=False)
+        output_resolved = output_path.resolve(strict=False)
+    except OSError:
+        return False
+    if input_resolved == output_resolved:
+        return True
+    if input_path.exists() and output_path.exists():
+        try:
+            return input_path.samefile(output_path)
+        except OSError:
+            return False
+    return False
+
+
 def main() -> None:
     """Main CLI execution logic."""
     args = parse_args()
+
+    if args.size is not None and args.size < 0:
+        print("Error: --size must be a non-negative integer.", file=sys.stderr)
+        sys.exit(1)
 
     # 1. Resolve Input target
     is_stdin = args.input == "-"
@@ -137,6 +158,10 @@ def main() -> None:
         else:
             in_path = Path(args.input)
             out_path = in_path.with_suffix('.zip') if in_path.suffix.lower() == '.gz' else in_path.with_suffix(in_path.suffix + '.zip')
+
+    if not is_stdin and out_path and _paths_refer_to_same_file(Path(args.input), out_path):
+        print("Error: Input and output paths must be different.", file=sys.stderr)
+        sys.exit(1)
 
     # 5. Parse Timestamp
     timestamp = None

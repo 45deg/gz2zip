@@ -661,6 +661,32 @@ async def test_invalid_gzip_magic_handling():
         await consume_async_generator(core.stream_gzip_to_zip(stream, "fail.txt"))
 
 
+def test_sync_rejects_truncated_base_header():
+    truncated = b"\x1f\x8b\x08"
+    with pytest.raises(EOFError, match="base GZIP header"):
+        core.gzip_to_zip(io.BytesIO(truncated), io.BytesIO(), "truncated-sync.txt")
+
+
+def test_sync_rejects_truncated_fname_field():
+    # Fixed header with FNAME flag set, but no zero-terminated filename data.
+    truncated = struct.pack("<BBBBIBB", 0x1F, 0x8B, 8, 0x08, 0, 0, 255)
+    with pytest.raises(EOFError, match="FNAME"):
+        core.gzip_to_zip(io.BytesIO(truncated), io.BytesIO(), "truncated-fname.txt")
+
+
+def test_sync_rejects_negative_known_uncompressed_size():
+    gz_data = compress_data(b"negative-size")
+    with pytest.raises(ValueError, match="non-negative"):
+        convert_sync(gz_data, "bad-sync-size.txt", known_uncompressed_size=-1)
+
+
+@pytest.mark.asyncio
+async def test_async_rejects_negative_known_uncompressed_size():
+    gz_data = compress_data(b"negative-size-async")
+    with pytest.raises(ValueError, match="non-negative"):
+        await convert_async(gz_data, "bad-async-size.txt", known_uncompressed_size=-1)
+
+
 def test_sync_rejects_non_deflate_method():
     broken = bytearray(compress_data(b"method-check-sync"))
     broken[2] = 0  # GZIP CM field

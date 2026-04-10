@@ -42,6 +42,24 @@ def _resolve_dos_time(
     return datetime_to_dos_time(datetime.datetime.now())
 
 
+def _read_exact_sync(f_in: IO[bytes], n: int, field_name: str) -> bytes:
+    """Reads exactly n bytes from a synchronous stream or raises EOFError."""
+    data = f_in.read(n)
+    if len(data) != n:
+        raise EOFError(f"Unexpected end of GZIP file while reading {field_name}.")
+    return data
+
+
+def _read_zero_terminated_field(f_in: IO[bytes], field_name: str) -> None:
+    """Consumes a zero-terminated GZIP header field, raising on truncation."""
+    while True:
+        b = f_in.read(1)
+        if b == b"\x00":
+            return
+        if b == b"":
+            raise EOFError(f"Unexpected end of GZIP file while reading {field_name}.")
+
+
 def _create_local_file_header(
     filename_bytes: bytes,
     mod_time: int,
@@ -239,35 +257,48 @@ def gzip_to_zip(
     Raises:
         ValueError: If the input stream is not a valid GZIP file or if
             the compression method is not Deflate.
+        EOFError: If the input stream is truncated.
     """
+    if known_uncompressed_size is not None and known_uncompressed_size < 0:
+        raise ValueError("known_uncompressed_size must be non-negative.")
+
     # 1. Parse GZIP Header
-    magic = f_in.read(2)
+    magic = _read_exact_sync(f_in, 2, "the GZIP magic bytes")
     if magic != b"\x1f\x8b":
         raise ValueError("Not a valid GZIP file.")
 
-    method, flag, mtime, xfl, os_type = struct.unpack("<BBIBB", f_in.read(8))
+    header_base = _read_exact_sync(f_in, 8, "the base GZIP header")
+    method, flag, mtime, _xfl, _os_type = struct.unpack("<BBIBB", header_base)
     if method != 8:
         raise ValueError("Compression method is not Deflate.")
 
     if flag & 0x04:  # FEXTRA
-        extra_len = struct.unpack("<H", f_in.read(2))[0]
-        f_in.seek(extra_len, 1)
+        extra_len = struct.unpack(
+            "<H", _read_exact_sync(f_in, 2, "the FEXTRA length")
+        )[0]
+        _read_exact_sync(f_in, extra_len, "the FEXTRA field")
     if flag & 0x08:  # FNAME
-        while f_in.read(1) != b"\x00":
-            pass
+        _read_zero_terminated_field(f_in, "the FNAME field")
     if flag & 0x10:  # FCOMMENT
-        while f_in.read(1) != b"\x00":
-            pass
+        _read_zero_terminated_field(f_in, "the FCOMMENT field")
     if flag & 0x02:  # FHCRC
-        f_in.seek(2, 1)
+        _read_exact_sync(f_in, 2, "the FHCRC field")
 
     deflate_start = f_in.tell()
 
     # Read footer for CRC32 and Uncompressed Size
-    f_in.seek(-8, 2)
+    try:
+        f_in.seek(-8, 2)
+    except (OSError, ValueError) as exc:
+        raise ValueError("Invalid GZIP file: missing CRC/ISIZE footer.") from exc
     deflate_end = f_in.tell()
-    crc32, gz_isize = struct.unpack("<II", f_in.read(8))
+    footer = _read_exact_sync(f_in, 8, "the CRC/ISIZE footer")
+    crc32, gz_isize = struct.unpack("<II", footer)
     compress_size = deflate_end - deflate_start
+    if compress_size < 0:
+        raise ValueError(
+            "Invalid GZIP file: header fields extend beyond the data section."
+        )
 
     uncompressed_size = (
         known_uncompressed_size if known_uncompressed_size is not None else gz_isize
@@ -294,6 +325,8 @@ def gzip_to_zip(
 
     while bytes_left > 0:
         chunk = f_in.read(min(bytes_left, chunk_size))
+        if not chunk:
+            raise EOFError("Unexpected end of GZIP file while reading Deflate data.")
         f_out.write(chunk)
         bytes_left -= len(chunk)
 
@@ -344,6 +377,9 @@ async def stream_gzip_to_zip(
             the compression method is not Deflate.
         EOFError: If the GZIP stream ends unexpectedly.
     """
+    if known_uncompressed_size is not None and known_uncompressed_size < 0:
+        raise ValueError("known_uncompressed_size must be non-negative.")
+
     iterator = aiter(gzip_stream)
     buffer = bytearray()
 
