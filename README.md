@@ -1,5 +1,9 @@
 # gz2zip
 
+[![CI](https://github.com/45deg/gz2zip/actions/workflows/ci.yaml/badge.svg)](https://github.com/45deg/gz2zip/actions/workflows/ci.yaml)
+[![PyPI version](https://img.shields.io/pypi/v/gz2zip.svg)](https://pypi.org/project/gz2zip/)
+[![Python versions](https://img.shields.io/pypi/pyversions/gz2zip.svg)](https://pypi.org/project/gz2zip/)
+
 `gz2zip` converts **GZIP to ZIP/ZIP64 without recompression** by reusing the original Deflate payload.
 
 This is much faster than decompressing and re-zipping, and it supports both:
