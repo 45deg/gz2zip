@@ -165,6 +165,9 @@ correctly. Use single-member `.gz` input files.
 File replacement creates a new file with private temporary-file permissions;
 existing destination permissions and hard-link relationships are not preserved.
 If the destination is a symbolic link, the link itself is replaced.
+Special destinations such as FIFOs, devices, and sockets (including symlinks
+to them) are rejected without replacement. To stream to one, use stdout and
+shell redirection, for example `gz2zip input.gz -o - > output.fifo`.
 
 ## Development
 

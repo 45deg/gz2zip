@@ -4,7 +4,8 @@ Unix-style Command Line Interface for high-speed GZIP to ZIP conversion.
 
 Supports stdin/stdout piping, robust error handling, and quiet execution.
 main routes file inputs to core.gzip_to_zip and stdin to process_stream.
-_open_output publishes file output only after successful conversion and close.
+_open_output rejects special destinations and publishes regular file output
+only after successful conversion and close.
 It behaves like a standard Unix filter:
   $ cat data.gz | python cli.py > data.zip
 """
@@ -12,6 +13,7 @@ It behaves like a standard Unix filter:
 import argparse
 import asyncio
 import datetime
+import stat
 import sys
 import tempfile
 from contextlib import contextmanager
@@ -117,6 +119,19 @@ def _paths_refer_to_same_file(input_path: Path, output_path: Path) -> bool:
     return False
 
 
+def _validate_output_path(out_path: Path) -> None:
+    """Refuse to replace FIFOs, devices, sockets, or directories."""
+    try:
+        mode = out_path.stat().st_mode
+    except FileNotFoundError:
+        return
+    if not stat.S_ISREG(mode):
+        raise ValueError(
+            f"Output path is not a regular file: {out_path}. "
+            "Use '-o -' with shell redirection to write to a pipe or device."
+        )
+
+
 @contextmanager
 def _open_output(out_path: Optional[Path]):
     """Write directly to stdout or atomically replace a file after success."""
@@ -124,6 +139,7 @@ def _open_output(out_path: Optional[Path]):
         yield sys.stdout.buffer
         return
 
+    _validate_output_path(out_path)
     temporary_path = None
     try:
         # Use the destination directory so replacement stays on one filesystem.
@@ -132,6 +148,8 @@ def _open_output(out_path: Optional[Path]):
         ) as f_out:
             temporary_path = Path(f_out.name)
             yield f_out
+        # Conversion may take a long time; recheck before publishing the file.
+        _validate_output_path(out_path)
         temporary_path.replace(out_path)
     finally:
         # Only remove the temporary file created by this invocation.
