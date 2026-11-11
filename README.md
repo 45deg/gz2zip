@@ -154,6 +154,21 @@ Concatenated GZIP streams are valid (for example: `cat a.gz b.gz > joined.gz`),
 but this project currently does **not** support that multi-member format
 correctly. Use single-member `.gz` input files.
 
+## Changes in 0.2.0
+
+- File output is written to a temporary file in the destination directory and
+  replaces the destination only after conversion and closing succeed. Failed
+  conversions preserve existing output files.
+- File input can be converted directly to a stdout pipe with `-o -`.
+- `stream_gzip_to_zip` consistently yields `bytes`, including payload chunks.
+
+File replacement creates a new file with private temporary-file permissions;
+existing destination permissions and hard-link relationships are not preserved.
+If the destination is a symbolic link, the link itself is replaced.
+Special destinations such as FIFOs, devices, and sockets (including symlinks
+to them) are rejected without replacement. To stream to one, use stdout and
+shell redirection, for example `gz2zip input.gz -o - > output.fifo`.
+
 ## Development
 
 Run tests:

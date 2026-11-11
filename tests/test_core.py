@@ -1,6 +1,9 @@
 """
 APPNOTE-driven test suite for gz2zip.core.
 
+Conversion tests check payload integrity and the asynchronous bytes contract;
+parsing helpers below inspect ZIP metadata independently of the implementation.
+
 This suite validates conversion integrity plus ZIP structure details against
 APPNOTE.TXT sections around:
 - 4.3.7 Local file header
@@ -328,6 +331,20 @@ async def test_async_basic_conversion():
         assert zf.namelist() == ["test_async.txt"]
         assert zf.read("test_async.txt") == data
         assert zf.testzip() is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("chunk_size", [1, 17, 65536])
+async def test_async_yields_bytes_for_every_chunk(chunk_size):
+    data = b"immutable streaming payload" * 100
+    stream = async_byte_stream(compress_data(data), chunk_size=chunk_size)
+    chunks = []
+    async for chunk in core.stream_gzip_to_zip(stream, "data.txt"):
+        assert isinstance(chunk, bytes)
+        chunks.append(chunk)
+
+    with zipfile.ZipFile(io.BytesIO(b"".join(chunks))) as archive:
+        assert archive.read("data.txt") == data
 
 
 def test_sync_with_all_optional_gzip_header_fields():

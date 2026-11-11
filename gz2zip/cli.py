@@ -3,6 +3,9 @@
 Unix-style Command Line Interface for high-speed GZIP to ZIP conversion.
 
 Supports stdin/stdout piping, robust error handling, and quiet execution.
+main routes file inputs to core.gzip_to_zip and stdin to process_stream.
+_open_output rejects special destinations and publishes regular file output
+only after successful conversion and close.
 It behaves like a standard Unix filter:
   $ cat data.gz | python cli.py > data.zip
 """
@@ -10,7 +13,10 @@ It behaves like a standard Unix filter:
 import argparse
 import asyncio
 import datetime
+import stat
 import sys
+import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -113,6 +119,44 @@ def _paths_refer_to_same_file(input_path: Path, output_path: Path) -> bool:
     return False
 
 
+def _validate_output_path(out_path: Path) -> None:
+    """Refuse to replace FIFOs, devices, sockets, or directories."""
+    try:
+        mode = out_path.stat().st_mode
+    except FileNotFoundError:
+        return
+    if not stat.S_ISREG(mode):
+        raise ValueError(
+            f"Output path is not a regular file: {out_path}. "
+            "Use '-o -' with shell redirection to write to a pipe or device."
+        )
+
+
+@contextmanager
+def _open_output(out_path: Optional[Path]):
+    """Write directly to stdout or atomically replace a file after success."""
+    if out_path is None:
+        yield sys.stdout.buffer
+        return
+
+    _validate_output_path(out_path)
+    temporary_path = None
+    try:
+        # Use the destination directory so replacement stays on one filesystem.
+        with tempfile.NamedTemporaryFile(
+            mode="wb", dir=out_path.parent, prefix=".gz2zip-", delete=False
+        ) as f_out:
+            temporary_path = Path(f_out.name)
+            yield f_out
+        # Conversion may take a long time; recheck before publishing the file.
+        _validate_output_path(out_path)
+        temporary_path.replace(out_path)
+    finally:
+        # Only remove the temporary file created by this invocation.
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+
+
 def main() -> None:
     """Main CLI execution logic."""
     args = parse_args()
@@ -180,9 +224,7 @@ def main() -> None:
 
     # 7. Execute Conversion
     try:
-        f_out = sys.stdout.buffer if is_stdout else open(out_path, 'wb')
-        
-        try:
+        with _open_output(out_path) as f_out:
             if is_stdin:
                 # Use the asynchronous streaming generator designed for unseekable pipes
                 asyncio.run(process_stream(f_out, name_in_zip, args.size, timestamp))
@@ -196,17 +238,11 @@ def main() -> None:
                         known_uncompressed_size=args.size,
                         timestamp=timestamp
                     )
-        finally:
-            if not is_stdout:
-                f_out.close()
 
         log("Conversion completed successfully!", args.quiet)
         
     except Exception as e:
         print(f"\nError during conversion: {e}", file=sys.stderr)
-        # Clean up partial output file if an error occurred and we weren't piping to stdout
-        if not is_stdout and out_path and out_path.exists():
-            out_path.unlink(missing_ok=True)
         sys.exit(1)
 
 

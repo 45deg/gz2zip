@@ -1,3 +1,10 @@
+"""Repackage single-member GZIP data without recompression.
+
+gzip_to_zip reads seekable inputs and writes to files or pipes;
+stream_gzip_to_zip yields bytes from asynchronous inputs. Both share ZIP
+header builders and preserve the original Deflate payload and footer metadata.
+"""
+
 import struct
 import datetime
 from typing import IO, AsyncIterable, AsyncGenerator, Optional, Tuple
@@ -244,8 +251,8 @@ def gzip_to_zip(
     supports ZIP64 extensions for files larger than 4GB.
 
     Args:
-        f_in (IO[bytes]): The input GZIP binary stream.
-        f_out (IO[bytes]): The output ZIP binary stream.
+        f_in (IO[bytes]): The seekable input GZIP binary stream.
+        f_out (IO[bytes]): The output ZIP binary stream; seeking is not required.
         filename_in_zip (str): The filename to use inside the ZIP archive.
         known_uncompressed_size (Optional[int], optional): The uncompressed
             size of the data. If not provided, it will be read from the GZIP
@@ -330,7 +337,8 @@ def gzip_to_zip(
         f_out.write(chunk)
         bytes_left -= len(chunk)
 
-    cd_offset = f_out.tell()
+    # Offsets are relative to this archive, including when output is a pipe.
+    cd_offset = len(lh_bytes) + compress_size
 
     # 4. Write Central Directory and Footer
     footer_bytes = _create_central_directory_and_eocd(
@@ -457,14 +465,14 @@ async def stream_gzip_to_zip(
             tail.extend(chunk)
             # Yield everything except the last 8 bytes (reserved for CRC/ISIZE)
             if len(tail) > 8:
-                yield_data = tail[:-8]
+                yield_data = bytes(tail[:-8])
                 yield yield_data
                 compress_size += len(yield_data)
                 current_offset += len(yield_data)
                 del tail[:-8]
         except StopAsyncIteration:
             if len(tail) > 8:
-                yield_data = tail[:-8]
+                yield_data = bytes(tail[:-8])
                 yield yield_data
                 compress_size += len(yield_data)
                 current_offset += len(yield_data)
